@@ -139,13 +139,45 @@ function runOptimization(model) {
 }
 
 function authLandingHTML() {
+  const savingsRows = [
+    { month: 'Jan', saved: 95, spent: 120 },
+    { month: 'Feb', saved: 110, spent: 118 },
+    { month: 'Mar', saved: 136, spent: 112 },
+    { month: 'Apr', saved: 158, spent: 105 }
+  ];
+
   return `
     <section class="card">
-      <h2>Intelligent Solar System Management</h2>
-      <p>Simulate distribution from solar input to batteries, boiler, and grid export with reporting and optimization.</p>
+      <h2>AI Agent Solar Home Overview</h2>
+      <p>Track monitored input/output and use AI Agent optimization to reduce monthly energy spending.</p>
+      <div class="home-visuals">
+        <figure>
+          <img src="https://images.unsplash.com/photo-1509391366360-2e959784a276?auto=format&fit=crop&w=800&q=60" alt="Solar panels on rooftop" />
+          <figcaption>Monitored solar panel input and weather-aware production.</figcaption>
+        </figure>
+        <figure>
+          <img src="https://images.unsplash.com/photo-1497435334941-8c899ee9e8e9?auto=format&fit=crop&w=800&q=60" alt="Battery energy storage system" />
+          <figcaption>Battery + home backup optimization for day/night balancing.</figcaption>
+        </figure>
+      </div>
+
+      <h3>AI Agent spending impact (example)</h3>
+      ${renderMiniBars(savingsRows.map((x) => ({ label: x.month, val: x.saved })), 'val', null, ' € saved')}
+      <table><thead><tr><th>Month</th><th>Spent without AI</th><th>Saved by AI Agent</th><th>Estimated net bill</th></tr></thead>
+      <tbody>${savingsRows.map((x) => `<tr><td>${x.month}</td><td>€${x.spent}</td><td>€${x.saved}</td><td>€${Math.max(x.spent - x.saved, 0)}</td></tr>`).join('')}</tbody></table>
+
+      <h3>Recommended devices and integration links</h3>
+      <ul>
+        <li><a href="https://www.goodwe.com/" target="_blank" rel="noreferrer">GoodWe official portal</a> (inverters, batteries, ecosystem).</li>
+        <li><a href="https://www.goodwe.com/gw10k-et" target="_blank" rel="noreferrer">GoodWe GW10K-ET-20 G2 inverter series</a> for hybrid/home backup use.</li>
+        <li><a href="https://www.goodwe.com/lynx-home-d" target="_blank" rel="noreferrer">GoodWe LYNX Home D battery</a> (e.g., LYNX D 15 kWh configuration).</li>
+        <li><a href="https://www.goodwe.com/sems-portal" target="_blank" rel="noreferrer">SEMS portal / integration ecosystem</a> for monitoring and API-oriented integration scenarios.</li>
+        <li><a href="https://solaro.sk/p/solarny-invertor-eco-solar-boost-mppt-35kw-pro/" target="_blank" rel="noreferrer">ECO SOLAR BOOST MPPT-3000 3.5kW PRO</a> for heating + backup workflow studies.</li>
+      </ul>
     </section>
+
     <section class="card">
-      <h2>Login Simulation</h2>
+      <h2>Login Access</h2>
       <p>Use <code>admin</code> for admin pages or any username/password for user pages.</p>
       <form id="loginForm" class="form-grid">
         <label>Email / Username<input id="email" placeholder="admin or user@example.com" /></label>
@@ -333,7 +365,7 @@ function mainAppHTML() {
 function render() {
   app.innerHTML = `<main class="app-shell">
     <header>
-      <div><h1>☀️ Solor System AI Agent</h1><p>Simulation for solar production, storage, and smart distribution.</p></div>
+      <div><h1>☀️ Solor System AI Agent</h1><p>AI management for solar production, storage, and smart distribution.</p></div>
       ${state.auth ? '<button id="logout" class="ghost">Logout</button>' : ''}
     </header>
     ${!state.auth ? authLandingHTML() : mainAppHTML()}

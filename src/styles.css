@@ -41,3 +41,8 @@ th, td { border:1px solid #cbd5e1; padding:.5rem; text-align:left; }
   .reports-layout { grid-template-columns: 1fr; }
   .reports-sidebar { border-right:none; border-bottom:1px solid #bae6fd; padding-right:0; padding-bottom:.8rem; }
 }
+
+.home-visuals { display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: .9rem; margin: .75rem 0; }
+.home-visuals figure { margin: 0; border:1px solid #bae6fd; border-radius: 12px; overflow:hidden; background:#f8fafc; }
+.home-visuals img { width:100%; height:170px; object-fit:cover; display:block; }
+.home-visuals figcaption { padding:.55rem .7rem; font-size:.88rem; color:#075985; }

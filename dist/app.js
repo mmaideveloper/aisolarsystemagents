@@ -159,7 +159,8 @@ function authLandingHTML() {
 function navTabsHTML() {
   const baseTabs = [
     { id: 'dashboard', label: 'Dashboard' },
-    { id: 'reports', label: 'Reports' }
+    { id: 'reports', label: 'Reports' },
+    { id: 'recommendation', label: 'Recommendation' }
   ];
   if (state.auth.role === 'admin') baseTabs.push({ id: 'admin', label: 'Admin Page' });
   return `<nav class="tabs">${baseTabs.map((t) => `<button class="tab ${state.currentPage === t.id ? 'active' : ''}" data-page="${t.id}">${t.label}</button>`).join('')}</nav>`;
@@ -222,6 +223,67 @@ function reportDataByType(type, history) {
   }
 }
 
+function generateWeatherForecast(model) {
+  const baseSunrise = ['05:02', '05:00', '04:58', '04:56', '04:55', '04:53', '04:51'];
+  const baseSunset = ['20:12', '20:13', '20:14', '20:16', '20:17', '20:18', '20:20'];
+  return Array.from({ length: 7 }, (_, i) => {
+    const sunnyHours = Number((4.2 + (i % 4) * 1.1).toFixed(1));
+    const temp = 17 + i;
+    const predictedEnergy = Number((model.panels * 0.42 * sunnyHours).toFixed(2));
+    const batterySaved = Number((predictedEnergy * (0.28 + (i % 3) * 0.08)).toFixed(2));
+    return {
+      day: `Day +${i + 1}`,
+      temp,
+      sunnyHours,
+      sunrise: baseSunrise[i],
+      sunset: baseSunset[i],
+      predictedEnergy,
+      batterySaved,
+      surplus: Number((predictedEnergy - batterySaved).toFixed(2))
+    };
+  });
+}
+
+function recommendationPage(model) {
+  const weather = generateWeatherForecast(model);
+  const avgEnergy = weather.reduce((a, x) => a + x.predictedEnergy, 0) / weather.length;
+  const avgSurplus = weather.reduce((a, x) => a + x.surplus, 0) / weather.length;
+  const avgSunny = weather.reduce((a, x) => a + x.sunnyHours, 0) / weather.length;
+
+  const recommendation = avgSurplus > 10
+    ? 'High surplus expected. Enable VSE virtual battery first, then route secondary surplus to water boiler.'
+    : 'Moderate surplus expected. Keep water boiler enabled during 11:00-15:00 and top-up real battery in the evening.';
+
+  return `<section class="card"><h2>Recommendation Page</h2>
+    <p>Predicted weather and production plan with setup hints for saving rest energy.</p>
+    <div class="metrics">
+      <article><span>Avg temperature</span><strong>${(weather.reduce((a,x)=>a+x.temp,0)/weather.length).toFixed(1)} °C</strong></article>
+      <article><span>Avg sunny hours</span><strong>${avgSunny.toFixed(1)} h/day</strong></article>
+      <article><span>Avg predicted energy</span><strong>${avgEnergy.toFixed(2)} kWh/day</strong></article>
+      <article><span>Avg surplus</span><strong>${avgSurplus.toFixed(2)} kWh/day</strong></article>
+    </div>
+
+    <h3>Weather details (sunrise/sunset)</h3>
+    <table><thead><tr><th>Day</th><th>Temp</th><th>Sunny hours</th><th>Sunrise</th><th>Sunset</th><th>Predicted energy</th><th>Saved to battery</th></tr></thead>
+    <tbody>${weather.map((d) => `<tr><td>${d.day}</td><td>${d.temp} °C</td><td>${d.sunnyHours} h</td><td>${d.sunrise}</td><td>${d.sunset}</td><td>${d.predictedEnergy} kWh</td><td>${d.batterySaved} kWh</td></tr>`).join('')}</tbody></table>
+
+    <h3>Chart: energy created</h3>
+    ${renderMiniBars(weather.map((d) => ({ label: d.day, val: d.predictedEnergy })), 'val', null, ' kWh')}
+
+    <h3>Chart: energy saved to battery</h3>
+    ${renderMiniBars(weather.map((d) => ({ label: d.day, val: d.batterySaved })), 'val', null, ' kWh')}
+
+    <div class="opt-box">
+      <p><strong>Recommendation:</strong> ${recommendation}</p>
+      <ul>
+        <li>Enable virtual battery from <strong>VSE</strong> when predicted surplus is above 8 kWh/day.</li>
+        <li>Enable water boiler heating window during high solar period (11:00 - 15:00).</li>
+        <li>Keep real battery reserve at 25% for night consumption and outages.</li>
+      </ul>
+    </div>
+  </section>`;
+}
+
 function reportsPage(model) {
   const history = generateHistory(model);
   const cfg = reportDataByType(state.selectedReport, history);
@@ -262,6 +324,7 @@ function mainAppHTML() {
   const model = calculate();
   let page = dashboardPage(model);
   if (state.currentPage === 'reports') page = reportsPage(model);
+  if (state.currentPage === 'recommendation') page = recommendationPage(model);
   if (state.currentPage === 'admin' && state.auth.role === 'admin') page = adminPage(model);
 
   return `${navTabsHTML()}${page}`;

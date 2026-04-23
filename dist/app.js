@@ -3,29 +3,37 @@ const state = {
   error: '',
   prediction: null,
   loading: false,
-  optimization: null
+  optimization: null,
+  currentPage: 'dashboard',
+  selectedReport: 'generation_vs_usage'
 };
 
 const app = document.getElementById('app');
+const REPORT_OPTIONS = [
+  { id: 'generation_vs_usage', name: 'Generation vs Usage' },
+  { id: 'battery_soc_trend', name: 'Battery SOC Trend' },
+  { id: 'panel_efficiency', name: 'Panel Efficiency' },
+  { id: 'grid_export_import', name: 'Grid Export/Import' },
+  { id: 'boiler_energy', name: 'Boiler Energy Use' },
+  { id: 'battery_cycle_depth', name: 'Battery Cycle Depth' },
+  { id: 'inverter_load', name: 'Inverter Load' },
+  { id: 'system_losses', name: 'System Losses' },
+  { id: 'forecast_accuracy', name: 'Forecast Accuracy' },
+  { id: 'cost_savings', name: 'Cost Savings' }
+];
 
 const delay = (ms = 500) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function fakeLogin(email, password) {
   await delay();
-
   if (!email || !password) {
     return { ok: false, message: 'Email/username and password are required.' };
   }
-
   const isAdmin = email.toLowerCase() === 'admin';
-
   return {
     ok: true,
     role: isAdmin ? 'admin' : 'user',
-    profile: {
-      name: isAdmin ? 'Admin' : email.split('@')[0] || 'Solar User',
-      email
-    }
+    profile: { name: isAdmin ? 'Admin' : email.split('@')[0] || 'Solar User', email }
   };
 }
 
@@ -68,6 +76,7 @@ function calculate() {
   remaining -= toBoiler;
 
   return {
+    panels,
     generatedKwh,
     spent: toVirtual + toReal + toBoiler,
     toVirtual,
@@ -77,68 +86,67 @@ function calculate() {
   };
 }
 
+function generateHistory(model) {
+  return Array.from({ length: 30 }, (_, i) => {
+    const day = i + 1;
+    const variability = 0.78 + (i % 7) * 0.04;
+    const generation = Number((model.generatedKwh * variability).toFixed(2));
+    const usage = Number((generation * (0.72 + ((i * 3) % 10) / 100)).toFixed(2));
+    const batterySoc = Math.min(100, Math.max(15, Math.round((model.toReal / 15) * 100 + (i % 5) * 3)));
+    return {
+      label: `Day ${day}`,
+      generation,
+      usage,
+      batterySoc,
+      gridExport: Number(Math.max(generation - usage, 0).toFixed(2)),
+      gridImport: Number(Math.max(usage - generation * 0.75, 0).toFixed(2)),
+      costSaving: Number((generation * 0.18).toFixed(2)),
+      panelCount: model.panels + (i % 2),
+      losses: Number((generation * 0.08).toFixed(2)),
+      inverterLoad: Math.min(100, Math.round((usage / 10) * 100))
+    };
+  });
+}
+
+function renderMiniBars(items, key, max = null, unit = '') {
+  const maxValue = max || Math.max(...items.map((it) => it[key]), 1);
+  return `<div class="mini-bars">${items.map((it) => {
+    const width = Math.round((it[key] / maxValue) * 100);
+    return `<div class="mini-row"><span>${it.label}</span><div class="bar-wrap"><div class="bar" style="width:${width}%"></div></div><strong>${it[key]}${unit}</strong></div>`;
+  }).join('')}</div>`;
+}
+
 function calculateBatteryMonitor(model) {
   const batteryCapacity = 15;
   const soc = Math.min(100, Math.round((model.toReal / batteryCapacity) * 100));
-  const batteryHealth = Math.max(82, 100 - Math.round(model.spent * 0.12));
-  const cycleDepth = Math.min(95, Math.round((model.toReal / batteryCapacity) * 80 + 12));
-  const inverterLoad = Math.min(100, Math.round((model.spent / 10) * 100));
-  const inverterEfficiency = Math.max(90, Math.min(98, 96 - Math.round(model.soldToGrid * 0.2)));
-
   return {
     deviceName: 'GoodWe GW10K-ET-20 G2 + LYNX D 15 kWh',
     soc,
-    batteryHealth,
-    cycleDepth,
-    inverterLoad,
-    inverterEfficiency,
-    recommendation:
-      soc < 35
-        ? 'Battery SOC is low. Prioritize charging from PV and reduce boiler load in the next cycle.'
-        : 'Battery SOC is stable. Keep hybrid mode with evening discharge window for best savings.'
+    batteryHealth: Math.max(82, 100 - Math.round(model.spent * 0.12)),
+    cycleDepth: Math.min(95, Math.round((model.toReal / batteryCapacity) * 80 + 12)),
+    inverterLoad: Math.min(100, Math.round((model.spent / 10) * 100)),
+    inverterEfficiency: Math.max(90, Math.min(98, 96 - Math.round(model.soldToGrid * 0.2)))
   };
 }
 
 function runOptimization(model) {
   const shiftToBattery = Math.min(model.soldToGrid * 0.45, 3.2);
-  const expectedSavings = shiftToBattery * 0.22;
-  const improvedSelfUse = Math.min(98, 65 + Math.round((model.spent + shiftToBattery) * 1.6));
-
   state.optimization = {
     shiftToBattery,
-    expectedSavings,
-    improvedSelfUse,
-    notes: [
-      'Set GoodWe GW10K-ET-20 G2 mode to maximize self-consumption between 17:00-22:00.',
-      'Keep LYNX D reserve SOC at 25% for backup reliability.',
-      'For ECO SOLAR BOOST MPPT-3000 3.5kW PRO, reduce morning start threshold to study heat-up behavior and improve efficiency.'
-    ]
+    expectedSavings: shiftToBattery * 0.22,
+    improvedSelfUse: Math.min(98, 65 + Math.round((model.spent + shiftToBattery) * 1.6))
   };
 }
 
-function diagramBar(label, value, total) {
-  const percent = total > 0 ? Math.round((value / total) * 100) : 0;
-  return `<div class="diagram-row"><span>${label}</span><div class="bar-wrap"><div class="bar" style="width:${percent}%"></div></div><strong>${value.toFixed(2)} kWh (${percent}%)</strong></div>`;
-}
-
-function homeAndLoginHTML() {
+function authLandingHTML() {
   return `
     <section class="card">
       <h2>Intelligent Solar System Management</h2>
-      <p>This SPA simulates how incoming energy from solar panels can be distributed to multiple destinations for savings and resilience.</p>
-      <h3>Solar features and opportunities</h3>
-      <ul>
-        <li><strong>Grid-off battery:</strong> autonomy during outages and night use; downside is battery investment and lifecycle wear.</li>
-        <li><strong>Public electricity provider export:</strong> monetize surplus energy; downside is usually lower selling tariff than buying cost.</li>
-        <li><strong>Boiled water system:</strong> convert extra kWh to hot-water storage (example: 1000 L to 80°C).</li>
-        <li><strong>Recommended extra:</strong> smart EV charging and schedule flexible loads (dishwasher, heat-pump) during peak solar hours.</li>
-      </ul>
-      <p>Distribution priority in this demo: virtual battery → real battery → water boiler → surplus to grid.</p>
+      <p>Simulate distribution from solar input to batteries, boiler, and grid export with reporting and optimization.</p>
     </section>
-
     <section class="card">
       <h2>Login Simulation</h2>
-      <p>Use <code>admin</code> as username for admin view, or any username/email and password for user view.</p>
+      <p>Use <code>admin</code> for admin pages or any username/password for user pages.</p>
       <form id="loginForm" class="form-grid">
         <label>Email / Username<input id="email" placeholder="admin or user@example.com" /></label>
         <label>Password<input id="password" type="password" placeholder="••••••••" /></label>
@@ -148,88 +156,124 @@ function homeAndLoginHTML() {
     </section>`;
 }
 
-function batteryMonitoringHTML(model) {
-  const monitor = calculateBatteryMonitor(model);
-  return `<section class="card">
-      <h3>Grid-Off Battery Monitoring & Integration</h3>
-      <p><strong>Measured setup:</strong> ${monitor.deviceName}</p>
-      <div class="metrics">
-        <article><span>Battery SOC</span><strong>${monitor.soc}%</strong></article>
-        <article><span>Battery health</span><strong>${monitor.batteryHealth}%</strong></article>
-        <article><span>Cycle depth</span><strong>${monitor.cycleDepth}%</strong></article>
-        <article><span>Inverter load</span><strong>${monitor.inverterLoad}%</strong></article>
-        <article><span>Inverter efficiency</span><strong>${monitor.inverterEfficiency}%</strong></article>
-      </div>
-      <p>${monitor.recommendation}</p>
-      <p>
-        Integrated study target:
-        <a href="https://solaro.sk/p/solarny-invertor-eco-solar-boost-mppt-35kw-pro/" target="_blank" rel="noreferrer">ECO SOLAR BOOST MPPT-3000 3.5kW PRO</a>
-        for settings tuning and optimization.
-      </p>
-      <button id="optimizeBtn">Run integration optimization</button>
-      ${state.optimization ? `<div class="opt-box">
-        <p><strong>Optimization result:</strong></p>
-        <ul>
-          <li>Shifted to battery: ${state.optimization.shiftToBattery.toFixed(2)} kWh/day</li>
-          <li>Estimated savings improvement: €${state.optimization.expectedSavings.toFixed(2)}/day</li>
-          <li>Projected self-use ratio: ${state.optimization.improvedSelfUse}%</li>
-        </ul>
-        <ul>${state.optimization.notes.map((n) => `<li>${n}</li>`).join('')}</ul>
-      </div>` : ''}
-    </section>`;
+function navTabsHTML() {
+  const baseTabs = [
+    { id: 'dashboard', label: 'Dashboard' },
+    { id: 'reports', label: 'Reports' }
+  ];
+  if (state.auth.role === 'admin') baseTabs.push({ id: 'admin', label: 'Admin Page' });
+  return `<nav class="tabs">${baseTabs.map((t) => `<button class="tab ${state.currentPage === t.id ? 'active' : ''}" data-page="${t.id}">${t.label}</button>`).join('')}</nav>`;
 }
 
-function dashboardHTML() {
-  const model = calculate();
-  const total = model.generatedKwh || 1;
+function dashboardPage(model) {
+  const history = generateHistory(model);
+  const week = history.slice(-7);
+  const monthTotal = history.reduce((a, x) => a + x.generation, 0).toFixed(2);
+  const weekTotal = week.reduce((a, x) => a + x.generation, 0).toFixed(2);
+  const dayLatest = history[history.length - 1];
 
   return `<section class="card"><h2>${state.auth.role === 'admin' ? 'Admin' : 'User'} Dashboard</h2>
-      <p>Welcome <strong>${state.auth.profile.name}</strong>. Below are generated reports and a simple energy distribution diagram.</p>
-      <div class="two-col">
-      <div><h3>Input setup</h3><div class="form-grid compact">
+    <div class="form-grid compact">
       <label>Number of panels<input id="panels" type="number" value="${readInputValue('panels', 12)}" /></label>
       <label>Panel power (W)<input id="panelWatt" type="number" value="${readInputValue('panelWatt', 460)}" /></label>
       <label>Sun hours/day<input id="sunHours" type="number" step="0.1" value="${readInputValue('sunHours', 5.2)}" /></label>
-      <label>System efficiency (%)<input id="efficiency" type="number" value="${readInputValue('efficiency', 84)}" /></label>
-      </div></div>
-      <div><h3>Output devices</h3><div class="form-grid compact">
-      <label>Virtual battery (kWh)<input id="virtualBatteryKwh" type="number" value="${readInputValue('virtualBatteryKwh', 8)}" /></label>
+      <label>Efficiency (%)<input id="efficiency" type="number" value="${readInputValue('efficiency', 84)}" /></label>
       <label>Real battery (kWh)<input id="realBatteryKwh" type="number" value="${readInputValue('realBatteryKwh', 12)}" /></label>
+      <label>Virtual battery (kWh)<input id="virtualBatteryKwh" type="number" value="${readInputValue('virtualBatteryKwh', 8)}" /></label>
       <label>Boiler liters<input id="boilerLiters" type="number" value="${readInputValue('boilerLiters', 1000)}" /></label>
-      <label>Water target °C<input id="targetTemp" type="number" value="${readInputValue('targetTemp', 80)}" /></label>
+      <label>Target °C<input id="targetTemp" type="number" value="${readInputValue('targetTemp', 80)}" /></label>
       <label>Boiler power (W)<input id="boilerPowerW" type="number" value="${readInputValue('boilerPowerW', 3000)}" /></label>
-      </div></div></div>
-      <h3>Fake reports</h3>
-      <div class="metrics">
-      <article><span>Built energy (today)</span><strong>${model.generatedKwh.toFixed(2)} kWh</strong></article>
-      <article><span>Spent energy</span><strong>${model.spent.toFixed(2)} kWh</strong></article>
-      <article><span>Daily to virtual battery</span><strong>${model.toVirtual.toFixed(2)} kWh</strong></article>
-      <article><span>Daily to real battery</span><strong>${model.toReal.toFixed(2)} kWh</strong></article>
-      <article><span>Daily to boiler</span><strong>${model.toBoiler.toFixed(2)} kWh</strong></article>
-      <article><span>Surplus to public grid</span><strong>${model.soldToGrid.toFixed(2)} kWh</strong></article>
-      </div>
-      <h3>Energy distribution diagram</h3>
-      <div class="diagram">
-        ${diagramBar('Virtual battery', model.toVirtual, total)}
-        ${diagramBar('Real battery', model.toReal, total)}
-        ${diagramBar('Boiler', model.toBoiler, total)}
-        ${diagramBar('Grid export', model.soldToGrid, total)}
-      </div>
-      <div class="actions">
-        <button id="predictBtn">Predict next day</button>
-        <p>Predicted next day generation: <strong>${state.prediction == null ? 'Not calculated yet' : `${state.prediction.toFixed(2)} kWh`}</strong></p>
-      </div>
-    </section>
-    ${batteryMonitoringHTML(model)}`;
+    </div>
+    <div class="metrics">
+      <article><span>Today generation</span><strong>${model.generatedKwh.toFixed(2)} kWh</strong></article>
+      <article><span>Week generation</span><strong>${weekTotal} kWh</strong></article>
+      <article><span>Month generation</span><strong>${monthTotal} kWh</strong></article>
+      <article><span>Latest day usage</span><strong>${dayLatest.usage} kWh</strong></article>
+    </div>
+    <h3>Daily / Weekly / Monthly diagram</h3>
+    ${renderMiniBars([
+      { label: 'Day', energy: dayLatest.generation },
+      { label: 'Week avg', energy: Number((weekTotal / 7).toFixed(2)) },
+      { label: 'Month avg', energy: Number((monthTotal / 30).toFixed(2)) }
+    ], 'energy', null, ' kWh')}
+    <h3>Overall system table</h3>
+    <table><thead><tr><th>Period</th><th>Generation kWh</th><th>Usage kWh</th><th>Grid Export kWh</th></tr></thead>
+    <tbody>
+      <tr><td>Day</td><td>${dayLatest.generation}</td><td>${dayLatest.usage}</td><td>${dayLatest.gridExport}</td></tr>
+      <tr><td>Week</td><td>${weekTotal}</td><td>${week.reduce((a,x)=>a+x.usage,0).toFixed(2)}</td><td>${week.reduce((a,x)=>a+x.gridExport,0).toFixed(2)}</td></tr>
+      <tr><td>Month</td><td>${monthTotal}</td><td>${history.reduce((a,x)=>a+x.usage,0).toFixed(2)}</td><td>${history.reduce((a,x)=>a+x.gridExport,0).toFixed(2)}</td></tr>
+    </tbody></table>
+    <div class="actions"><button id="predictBtn">Predict next day</button><p><strong>${state.prediction == null ? 'Not calculated yet' : `${state.prediction.toFixed(2)} kWh`}</strong></p></div>
+  </section>`;
+}
+
+function reportDataByType(type, history) {
+  switch (type) {
+    case 'battery_soc_trend': return { key: 'batterySoc', unit: '%' };
+    case 'panel_efficiency': return { key: 'panelCount', unit: ' panels' };
+    case 'grid_export_import': return { key: 'gridExport', unit: ' kWh' };
+    case 'boiler_energy': return { key: 'usage', unit: ' kWh' };
+    case 'battery_cycle_depth': return { key: 'batterySoc', unit: '%' };
+    case 'inverter_load': return { key: 'inverterLoad', unit: '%' };
+    case 'system_losses': return { key: 'losses', unit: ' kWh' };
+    case 'forecast_accuracy': return { key: 'generation', unit: ' kWh' };
+    case 'cost_savings': return { key: 'costSaving', unit: ' €' };
+    default: return { key: 'generation', unit: ' kWh' };
+  }
+}
+
+function reportsPage(model) {
+  const history = generateHistory(model);
+  const cfg = reportDataByType(state.selectedReport, history);
+  return `<section class="card reports-layout">
+    <aside class="reports-sidebar">
+      <h3>Reports</h3>
+      ${REPORT_OPTIONS.map((r) => `<button class="report-btn ${state.selectedReport === r.id ? 'active' : ''}" data-report="${r.id}">${r.name}</button>`).join('')}
+    </aside>
+    <div>
+      <h2>Report: ${REPORT_OPTIONS.find((x) => x.id === state.selectedReport)?.name}</h2>
+      <p>Per-day report using current parameters (panels: ${model.panels}).</p>
+      ${renderMiniBars(history.slice(-10), cfg.key, null, cfg.unit)}
+      <h3>Last 10 days data table</h3>
+      <table><thead><tr><th>Day</th><th>Generation</th><th>Usage</th><th>Battery SOC</th><th>Panels</th></tr></thead>
+      <tbody>${history.slice(-10).map((h) => `<tr><td>${h.label}</td><td>${h.generation}</td><td>${h.usage}</td><td>${h.batterySoc}%</td><td>${h.panelCount}</td></tr>`).join('')}</tbody></table>
+    </div>
+  </section>`;
+}
+
+function adminPage(model) {
+  const mon = calculateBatteryMonitor(model);
+  return `<section class="card"><h2>Admin Control Page</h2>
+    <p>Manage and optimize integrated components: <strong>${mon.deviceName}</strong>.</p>
+    <div class="metrics">
+      <article><span>SOC</span><strong>${mon.soc}%</strong></article>
+      <article><span>Health</span><strong>${mon.batteryHealth}%</strong></article>
+      <article><span>Cycle depth</span><strong>${mon.cycleDepth}%</strong></article>
+      <article><span>Inverter load</span><strong>${mon.inverterLoad}%</strong></article>
+      <article><span>Efficiency</span><strong>${mon.inverterEfficiency}%</strong></article>
+    </div>
+    <p>External inverter study: <a href="https://solaro.sk/p/solarny-invertor-eco-solar-boost-mppt-35kw-pro/" target="_blank" rel="noreferrer">ECO SOLAR BOOST MPPT-3000 3.5kW PRO</a></p>
+    <button id="optimizeBtn">Run integration optimization</button>
+    ${state.optimization ? `<div class="opt-box"><p>Shifted: ${state.optimization.shiftToBattery.toFixed(2)} kWh/day, Savings: €${state.optimization.expectedSavings.toFixed(2)}/day, Self-use: ${state.optimization.improvedSelfUse}%</p></div>` : ''}
+  </section>`;
+}
+
+function mainAppHTML() {
+  const model = calculate();
+  let page = dashboardPage(model);
+  if (state.currentPage === 'reports') page = reportsPage(model);
+  if (state.currentPage === 'admin' && state.auth.role === 'admin') page = adminPage(model);
+
+  return `${navTabsHTML()}${page}`;
 }
 
 function render() {
   app.innerHTML = `<main class="app-shell">
     <header>
-      <div><h1>☀️ Solor System AI Agent</h1><p>Simulation for solar production, storage, and smart distribution (no backend API).</p></div>
+      <div><h1>☀️ Solor System AI Agent</h1><p>Simulation for solar production, storage, and smart distribution.</p></div>
       ${state.auth ? '<button id="logout" class="ghost">Logout</button>' : ''}
     </header>
-    ${!state.auth ? homeAndLoginHTML() : dashboardHTML()}
+    ${!state.auth ? authLandingHTML() : mainAppHTML()}
   </main>`;
 
   document.getElementById('logout')?.addEventListener('click', () => {
@@ -237,6 +281,7 @@ function render() {
     state.prediction = null;
     state.error = '';
     state.optimization = null;
+    state.currentPage = 'dashboard';
     render();
   });
 
@@ -246,18 +291,15 @@ function render() {
       event.preventDefault();
       const emailValue = document.getElementById('email').value.trim();
       const passwordValue = document.getElementById('password').value.trim();
-
       state.loading = true;
       state.error = '';
       render();
-
       const result = await fakeLogin(emailValue, passwordValue);
-
       state.loading = false;
-      if (!result.ok) {
-        state.error = result.message;
-      } else {
+      if (!result.ok) state.error = result.message;
+      else {
         state.auth = result;
+        state.currentPage = 'dashboard';
       }
       render();
     });
@@ -265,9 +307,16 @@ function render() {
 
   if (state.auth) {
     document.querySelectorAll('input').forEach((el) => el.addEventListener('input', render));
+    document.querySelectorAll('[data-page]').forEach((el) => el.addEventListener('click', () => {
+      state.currentPage = el.dataset.page;
+      render();
+    }));
+    document.querySelectorAll('[data-report]').forEach((el) => el.addEventListener('click', () => {
+      state.selectedReport = el.dataset.report;
+      render();
+    }));
     document.getElementById('predictBtn')?.addEventListener('click', async () => {
-      const model = calculate();
-      state.prediction = await fakePredictNextDay(model.generatedKwh);
+      state.prediction = await fakePredictNextDay(calculate().generatedKwh);
       render();
     });
     document.getElementById('optimizeBtn')?.addEventListener('click', () => {

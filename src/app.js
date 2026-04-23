@@ -244,14 +244,14 @@ function render() {
   if (loginForm) {
     loginForm.addEventListener('submit', async (event) => {
       event.preventDefault();
+      const emailValue = document.getElementById('email').value.trim();
+      const passwordValue = document.getElementById('password').value.trim();
+
       state.loading = true;
       state.error = '';
       render();
 
-      const result = await fakeLogin(
-        document.getElementById('email').value.trim(),
-        document.getElementById('password').value.trim()
-      );
+      const result = await fakeLogin(emailValue, passwordValue);
 
       state.loading = false;
       if (!result.ok) {

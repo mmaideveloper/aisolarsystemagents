@@ -1,0 +1,35 @@
+:root {
+  font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  color: #0f172a;
+  background: linear-gradient(180deg, #f8fafc 0%, #ecfeff 100%);
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; }
+.app-shell { max-width: 1100px; margin: 0 auto; padding: 1.5rem; }
+header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+h1 { margin: 0; }
+h2, h3 { color: #0c4a6e; }
+.card { background: #fff; border: 1px solid #bae6fd; border-radius: 16px; padding: 1rem 1.2rem; margin-bottom: 1rem; box-shadow: 0 10px 30px rgba(12, 74, 110, 0.08); }
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: .75rem; }
+.form-grid.compact { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+label { display:flex; flex-direction:column; gap:.25rem; font-size:.92rem; }
+input { border:1px solid #7dd3fc; border-radius:10px; padding:.55rem .65rem; }
+button { border:none; border-radius:10px; background:#0284c7; color:white; padding:.6rem 1rem; cursor:pointer; }
+button.ghost { background:#0369a1; }
+.two-col { display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:1rem; }
+.metrics { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:.75rem; }
+.metrics article { background:#f0f9ff; border:1px solid #bae6fd; border-radius:12px; padding:.75rem; }
+.metrics span { display:block; font-size:.85rem; color:#075985; }
+.metrics strong { font-size:1.1rem; }
+.actions { margin-top:.9rem; display:flex; align-items:center; gap:1rem; flex-wrap:wrap; }
+.error { color:#991b1b; font-weight:600; }
+code { background: #e0f2fe; padding: 0.1rem 0.35rem; border-radius: 6px; }
+.diagram { display: grid; gap: 0.65rem; margin-top: 0.5rem; }
+.diagram-row { display: grid; grid-template-columns: 140px 1fr 160px; gap: 0.75rem; align-items: center; }
+.bar-wrap { background: #dbeafe; border-radius: 999px; height: 12px; overflow: hidden; }
+.bar { background: linear-gradient(90deg, #0ea5e9, #0284c7); height: 100%; }
+
+.opt-box { background:#f0fdf4; border:1px solid #86efac; border-radius:12px; margin-top:.75rem; padding:.75rem; }
+.opt-box ul { margin:.4rem 0; }
+a { color:#0c4a6e; }

@@ -1,6 +1,8 @@
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using ModelContextProtocol.Protocol;
 
 public sealed class GatewayConfigurationService(IConfiguration configuration)
 {
@@ -56,4 +58,309 @@ public sealed class SubServerMcpRelayService(IHttpClientFactory httpClientFactor
         resp.EnsureSuccessStatusCode();
         return await resp.Content.ReadAsStringAsync(ct);
     }
+}
+
+public sealed class GatewayMcpToolService(
+    IHttpClientFactory httpClientFactory,
+    GatewayConfigurationService configuration)
+{
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    public async Task<ListToolsResult> ListToolsAsync(CancellationToken ct)
+    {
+        var tools = new JsonArray
+        {
+            CreateTool(
+                "gateway_get_configuration",
+                "Returns current subserver configuration from persistent store",
+                EmptyObjectSchema()),
+            CreateTool(
+                "gateway_add_configuration",
+                "Adds or updates one subserver configuration entry",
+                SubServerConfigSchema()),
+            CreateTool(
+                "gateway_restart",
+                "Requests gateway restart so new configuration is reloaded",
+                EmptyObjectSchema())
+        };
+
+        foreach (var server in configuration.Get().SubServers)
+        {
+            try
+            {
+                var result = await SendMcpRequestAsync(
+                    server.Url,
+                    "tools/list",
+                    new JsonObject(),
+                    ct);
+
+                if (result["tools"] is not JsonArray subTools)
+                {
+                    continue;
+                }
+
+                foreach (var subToolNode in subTools)
+                {
+                    if (subToolNode is not JsonObject subTool)
+                    {
+                        continue;
+                    }
+
+                    var originalName = subTool["name"]?.GetValue<string>();
+                    if (string.IsNullOrWhiteSpace(originalName))
+                    {
+                        continue;
+                    }
+
+                    var gatewayTool = subTool.DeepClone().AsObject();
+                    gatewayTool["name"] = ToGatewayToolName(server.Name, originalName);
+                    gatewayTool["description"] = PrefixDescription(server.Name, gatewayTool["description"]?.GetValue<string>());
+                    tools.Add(gatewayTool);
+                }
+            }
+            catch (Exception ex)
+            {
+                tools.Add(CreateTool(
+                    ToGatewayToolName(server.Name, "discovery_error"),
+                    $"Discovery failed for {server.Name}: {ex.Message}",
+                    EmptyObjectSchema()));
+            }
+        }
+
+        return DeserializeResult<ListToolsResult>(new JsonObject { ["tools"] = tools });
+    }
+
+    public async Task<CallToolResult> CallToolAsync(CallToolRequestParams request, CancellationToken ct)
+    {
+        return request.Name switch
+        {
+            "gateway_get_configuration" => CreateTextResult(configuration.Get()),
+            "gateway_add_configuration" => AddConfiguration(request),
+            "gateway_restart" => RestartGateway(),
+            _ => await CallSubServerToolAsync(request, ct)
+        };
+    }
+
+    private CallToolResult AddConfiguration(CallToolRequestParams request)
+    {
+        if (request.Arguments is null ||
+            !request.Arguments.TryGetValue("subServer", out var subServerJson))
+        {
+            return CreateErrorResult("Missing required argument 'subServer'.");
+        }
+
+        var subServer = subServerJson.Deserialize<SubServerConfig>(JsonOptions);
+        if (subServer is null || string.IsNullOrWhiteSpace(subServer.Name) || string.IsNullOrWhiteSpace(subServer.Url))
+        {
+            return CreateErrorResult("'subServer' must include non-empty 'name' and 'url' values.");
+        }
+
+        return CreateTextResult(configuration.AddOrUpdate(subServer));
+    }
+
+    private CallToolResult RestartGateway()
+    {
+        configuration.RequestRestart();
+        return CreateTextResult("restart_requested");
+    }
+
+    private async Task<CallToolResult> CallSubServerToolAsync(CallToolRequestParams request, CancellationToken ct)
+    {
+        foreach (var server in configuration.Get().SubServers)
+        {
+            var listResult = await SendMcpRequestAsync(server.Url, "tools/list", new JsonObject(), ct);
+            if (listResult["tools"] is not JsonArray subTools)
+            {
+                continue;
+            }
+
+            foreach (var subToolNode in subTools)
+            {
+                if (subToolNode is not JsonObject subTool)
+                {
+                    continue;
+                }
+
+                var originalToolName = subTool["name"]?.GetValue<string>();
+                if (string.IsNullOrWhiteSpace(originalToolName) ||
+                    !string.Equals(ToGatewayToolName(server.Name, originalToolName), request.Name, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var result = await SendMcpRequestAsync(
+                    server.Url,
+                    "tools/call",
+                    new JsonObject
+                    {
+                        ["name"] = originalToolName,
+                        ["arguments"] = request.Arguments is null
+                            ? new JsonObject()
+                            : JsonSerializer.SerializeToNode(request.Arguments, JsonOptions)
+                    },
+                    ct);
+
+                return DeserializeResult<CallToolResult>(result);
+            }
+        }
+
+        return CreateErrorResult($"Unknown tool '{request.Name}'.");
+    }
+
+    private async Task<JsonObject> SendMcpRequestAsync(
+        string url,
+        string method,
+        JsonObject parameters,
+        CancellationToken ct)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = new StringContent(
+                JsonSerializer.Serialize(new JsonObject
+                {
+                    ["jsonrpc"] = "2.0",
+                    ["id"] = Guid.NewGuid().ToString("N"),
+                    ["method"] = method,
+                    ["params"] = parameters
+                }, JsonOptions),
+                Encoding.UTF8,
+                "application/json")
+        };
+
+        req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+        req.Headers.TryAddWithoutValidation("MCP-Protocol-Version", "2025-06-18");
+
+        var client = httpClientFactory.CreateClient();
+        using var resp = await client.SendAsync(req, ct);
+        resp.EnsureSuccessStatusCode();
+
+        var body = await resp.Content.ReadAsStringAsync(ct);
+        var envelope = ParseMcpEnvelope(body);
+
+        if (envelope["error"] is JsonObject error)
+        {
+            var message = error["message"]?.GetValue<string>() ?? "MCP request failed.";
+            throw new InvalidOperationException(message);
+        }
+
+        return envelope["result"] as JsonObject
+            ?? throw new InvalidOperationException("MCP response did not include a result object.");
+    }
+
+    private static JsonObject ParseMcpEnvelope(string body)
+    {
+        if (body.TrimStart().StartsWith('{'))
+        {
+            return JsonNode.Parse(body)?.AsObject()
+                ?? throw new InvalidOperationException("MCP response was not valid JSON.");
+        }
+
+        var data = string.Join(
+            Environment.NewLine,
+            body.Split(["\r\n", "\n"], StringSplitOptions.None)
+                .Where(line => line.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+                .Select(line => line["data:".Length..].Trim()));
+
+        if (string.IsNullOrWhiteSpace(data))
+        {
+            throw new InvalidOperationException("MCP event-stream response did not include a data event.");
+        }
+
+        return JsonNode.Parse(data)?.AsObject()
+            ?? throw new InvalidOperationException("MCP event-stream data was not valid JSON.");
+    }
+
+    private static T DeserializeResult<T>(JsonObject result)
+        => result.Deserialize<T>(JsonOptions)
+           ?? throw new InvalidOperationException($"Unable to deserialize MCP {typeof(T).Name}.");
+
+    private static CallToolResult CreateTextResult(object value)
+        => DeserializeResult<CallToolResult>(new JsonObject
+        {
+            ["content"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["type"] = "text",
+                    ["text"] = value is string text ? text : JsonSerializer.Serialize(value, JsonOptions)
+                }
+            }
+        });
+
+    private static CallToolResult CreateErrorResult(string message)
+        => DeserializeResult<CallToolResult>(new JsonObject
+        {
+            ["isError"] = true,
+            ["content"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["type"] = "text",
+                    ["text"] = message
+                }
+            }
+        });
+
+    private static JsonObject CreateTool(string name, string description, JsonObject inputSchema)
+        => new()
+        {
+            ["name"] = name,
+            ["description"] = description,
+            ["inputSchema"] = inputSchema
+        };
+
+    private static JsonObject EmptyObjectSchema()
+        => new()
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject(),
+            ["additionalProperties"] = false
+        };
+
+    private static JsonObject SubServerConfigSchema()
+        => new()
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["subServer"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["name"] = new JsonObject { ["type"] = "string" },
+                        ["url"] = new JsonObject { ["type"] = "string" },
+                        ["oauth"] = new JsonObject
+                        {
+                            ["type"] = "object",
+                            ["properties"] = new JsonObject
+                            {
+                                ["scope"] = new JsonObject { ["type"] = "string" }
+                            }
+                        }
+                    },
+                    ["required"] = new JsonArray("name", "url")
+                }
+            },
+            ["required"] = new JsonArray("subServer"),
+            ["additionalProperties"] = false
+        };
+
+    private static string ToGatewayToolName(string serverName, string toolName)
+        => $"{SanitizeName(serverName)}_{SanitizeName(toolName)}";
+
+    private static string SanitizeName(string value)
+    {
+        var chars = value
+            .Select(ch => char.IsLetterOrDigit(ch) ? char.ToLowerInvariant(ch) : '_')
+            .ToArray();
+
+        return string.Join("_", new string(chars).Split('_', StringSplitOptions.RemoveEmptyEntries));
+    }
+
+    private static string PrefixDescription(string serverName, string? description)
+        => string.IsNullOrWhiteSpace(description)
+            ? $"Tool from {serverName} MCP server"
+            : $"{serverName}: {description}";
 }

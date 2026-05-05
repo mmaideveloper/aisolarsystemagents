@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using ModelContextProtocol.Server;
+using ModelContextProtocol.Protocol;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -30,26 +31,48 @@ builder.Services.AddAuthorization(options =>
 builder.Services.AddHttpClient();
 builder.Services.AddSingleton<GatewayConfigurationService>();
 builder.Services.AddSingleton<SubServerMcpRelayService>();
+builder.Services.AddSingleton<GatewayMcpToolService>();
 
 builder.Services
     .AddMcpServer()
-    .WithHttpTransport()
-    .WithTools<GatewayTools>();
+    .WithHttpTransport(options => options.Stateless = true)
+    .WithListToolsHandler(async (RequestContext<ListToolsRequestParams> request, CancellationToken ct) =>
+    {
+        var tools = request.Services!.GetRequiredService<GatewayMcpToolService>();
+        return await tools.ListToolsAsync(ct);
+    })
+    .WithCallToolHandler(async (RequestContext<CallToolRequestParams> request, CancellationToken ct) =>
+    {
+        var tools = request.Services!.GetRequiredService<GatewayMcpToolService>();
+        return await tools.CallToolAsync(request.Params!, ct);
+    });
 
 var app = builder.Build();
 app.UseAuthentication();
 app.UseAuthorization();
-app.MapMcp("/mcp").RequireAuthorization("GatewayPolicy");
+app.MapGet("/", () => "healthy");
+app.MapGet("/favicon.ico", () => Results.NoContent());
+
+var requireGatewayAuth = !app.Environment.IsDevelopment();
+var mcpEndpoint = app.MapMcp("/mcp");
+if (requireGatewayAuth)
+{
+    mcpEndpoint.RequireAuthorization("GatewayPolicy");
+}
 
 // HTTP relay: forward initialize/tools/list/tools/call to a selected subserver.
-app.MapPost("/relay/{serverName}", async (string serverName, HttpRequest request, SubServerMcpRelayService relay, CancellationToken ct) =>
+var relayEndpoint = app.MapPost("/relay/{serverName}", async (string serverName, HttpRequest request, SubServerMcpRelayService relay, CancellationToken ct) =>
 {
     using var reader = new StreamReader(request.Body);
     var body = await reader.ReadToEndAsync(ct);
     var authHeader = request.Headers.Authorization.ToString();
     var responseJson = await relay.ForwardAsync(serverName, body, authHeader, ct);
     return Results.Content(responseJson, "application/json");
-}).RequireAuthorization("GatewayPolicy");
+});
+if (requireGatewayAuth)
+{
+    relayEndpoint.RequireAuthorization("GatewayPolicy");
+}
 
 app.Run();
 

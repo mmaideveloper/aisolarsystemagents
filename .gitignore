@@ -1,0 +1,8 @@
+examples/mcp-csharp/src/SmartRoomMcp/obj/
+examples/mcp-csharp/src/SmartIdentityMcp/obj/
+examples/mcp-csharp/src/MainGateway/obj/
+examples/mcp-csharp/src/SmartRoomMcp/bin/
+examples/mcp-csharp/src/SmartIdentityMcp/bin/
+examples/mcp-csharp/src/MainGateway/bin/
+examples/mcp-csharp/.logs/
+

@@ -1,0 +1,30 @@
+flowchart LR
+    assistant["AI Assistant<br/>Claude Desktop, VS Code, or Agent Runtime"]
+    idp["Identity Provider<br/>SmartIdentity OAuth/OIDC"]
+    gateway["Global MCP Gateway<br/>https://global-gateway/mcp"]
+    audit["Audit Trail and Logs<br/>correlationId, user, tool, time, status"]
+    policy["Gateway Authorization<br/>scope and role policy"]
+    smartroom["SmartRoom MCP Server<br/>smartroom tools and reports"]
+    smartidentity["SmartIdentity MCP Server<br/>identity tools and reports"]
+    future["Future Sub-MCP Servers<br/>finance, CRM, operations"]
+
+    assistant -->|"1. Sign in and obtain bearer token"| idp
+    assistant -->|"2. MCP initialize, tools/list, tools/call<br/>Authorization: Bearer token"| gateway
+    gateway -->|"3. Validate token issuer, audience, scopes"| idp
+    gateway -->|"4. Check gateway policy"| policy
+    gateway -->|"5. Write start event<br/>create correlationId"| audit
+
+    gateway -->|"6a. Forward MCP call<br/>reuse bearer token<br/>add correlationId"| smartroom
+    gateway -->|"6b. Forward MCP call<br/>reuse bearer token<br/>add correlationId"| smartidentity
+    gateway -->|"6c. Forward MCP call<br/>reuse bearer token<br/>add correlationId"| future
+
+    smartroom -->|"7a. Optional per-method claims check<br/>write domain audit log"| audit
+    smartidentity -->|"7b. Optional per-method claims check<br/>write domain audit log"| audit
+    future -->|"7c. Optional per-method claims check<br/>write domain audit log"| audit
+
+    smartroom -->|"8a. MCP result"| gateway
+    smartidentity -->|"8b. MCP result"| gateway
+    future -->|"8c. MCP result"| gateway
+
+    gateway -->|"9. Write end or error event"| audit
+    gateway -->|"10. MCP response"| assistant

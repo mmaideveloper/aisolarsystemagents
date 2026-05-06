@@ -1,8 +1,27 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using ModelContextProtocol.Server;
 using ModelContextProtocol.Protocol;
+using System.Security.Cryptography.X509Certificates;
 
 var builder = WebApplication.CreateBuilder(args);
+
+var gatewayCertificate = TryLoadCertificate(
+    builder.Configuration["GatewayCertificate:Thumbprint"],
+    "SolarAgents MainGateway localhost");
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.ListenLocalhost(6001, listenOptions =>
+    {
+        if (gatewayCertificate is not null)
+        {
+            listenOptions.UseHttps(gatewayCertificate);
+        }
+        else
+        {
+            listenOptions.UseHttps();
+        }
+    });
+});
 
 builder.Services.Configure<GatewayAuthOptions>(builder.Configuration.GetSection("Authentication"));
 builder.Services.Configure<GatewayConfigDocument>(builder.Configuration);
@@ -75,6 +94,34 @@ if (requireGatewayAuth)
 }
 
 app.Run();
+
+static X509Certificate2? TryLoadCertificate(string? thumbprint, string friendlyName)
+{
+    using var store = new X509Store(StoreName.My, StoreLocation.CurrentUser);
+    store.Open(OpenFlags.ReadOnly);
+
+    X509Certificate2? certificate = null;
+    if (!string.IsNullOrWhiteSpace(thumbprint))
+    {
+        certificate = store.Certificates
+            .Find(X509FindType.FindByThumbprint, thumbprint.Replace(":", ""), validOnly: false)
+            .OfType<X509Certificate2>()
+            .Where(cert => cert.HasPrivateKey)
+            .OrderByDescending(cert => cert.NotAfter)
+            .FirstOrDefault();
+    }
+
+    certificate ??= store.Certificates
+        .Find(X509FindType.FindByTimeValid, DateTimeOffset.UtcNow.DateTime, validOnly: false)
+        .OfType<X509Certificate2>()
+        .Where(cert => cert.HasPrivateKey
+            && (cert.FriendlyName == friendlyName
+                || (cert.Subject == "CN=localhost" && cert.Issuer == "CN=SolarAgents Local Dev Root CA")))
+        .OrderByDescending(cert => cert.NotAfter)
+        .FirstOrDefault();
+
+    return certificate is null ? null : new X509Certificate2(certificate);
+}
 
 public sealed class GatewayAuthOptions
 {

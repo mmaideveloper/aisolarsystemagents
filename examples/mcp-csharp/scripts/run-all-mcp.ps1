@@ -1,5 +1,5 @@
 param(
-    [string]$GatewayUrl = "http://localhost:5080",
+    [string]$GatewayUrl = "https://localhost:6001",
     [string]$SmartRoomUrl = "http://localhost:5081",
     [string]$SmartIdentityUrl = "http://localhost:5082",
     [int]$StartupTimeoutSeconds = 30
@@ -23,16 +23,19 @@ $servers = @(
         Name = "MainGateway"
         Project = Join-Path $exampleRoot "src/MainGateway/MainGateway.csproj"
         Url = $GatewayUrl
+        BindUrl = ""
     },
     @{
         Name = "SmartRoomMcp"
         Project = Join-Path $exampleRoot "src/SmartRoomMcp/SmartRoomMcp.csproj"
         Url = $SmartRoomUrl
+        BindUrl = $SmartRoomUrl
     },
     @{
         Name = "SmartIdentityMcp"
         Project = Join-Path $exampleRoot "src/SmartIdentityMcp/SmartIdentityMcp.csproj"
         Url = $SmartIdentityUrl
+        BindUrl = $SmartIdentityUrl
     }
 )
 
@@ -76,6 +79,40 @@ function Test-TcpPort {
     }
     finally {
         $client.Dispose()
+    }
+}
+
+function Get-PortOwner {
+    param([string]$Url)
+
+    $uri = [Uri]$Url
+    $port = Get-UrlPort -Url $Url
+    $connection = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue |
+        Where-Object { $_.LocalAddress -eq "127.0.0.1" -or $_.LocalAddress -eq "::1" -or $_.LocalAddress -eq "0.0.0.0" -or $_.LocalAddress -eq "::" } |
+        Select-Object -First 1
+
+    if (-not $connection) {
+        return $null
+    }
+
+    $process = Get-Process -Id $connection.OwningProcess -ErrorAction SilentlyContinue
+    [pscustomobject]@{
+        Url = $Url
+        Port = $port
+        ProcessId = $connection.OwningProcess
+        ProcessName = $process.ProcessName
+        Path = $process.Path
+    }
+}
+
+function Assert-PortsAvailable {
+    param([object[]]$Servers)
+
+    foreach ($server in $Servers) {
+        $owner = Get-PortOwner -Url $server.Url
+        if ($owner) {
+            throw "$($server.Name) cannot start because port $($owner.Port) is already in use by PID $($owner.ProcessId) ($($owner.ProcessName)): $($owner.Path)"
+        }
     }
 }
 
@@ -125,7 +162,8 @@ function Start-McpServer {
     param(
         [string]$Name,
         [string]$Project,
-        [string]$Url
+        [string]$Url,
+        [string]$BindUrl
     )
 
     $logFile = Join-Path $logRoot "$Name.log"
@@ -133,24 +171,28 @@ function Start-McpServer {
         Remove-Item -LiteralPath $logFile -Force
     }
 
+    $arguments = @(
+        "-NoExit",
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        $childRunner,
+        "-Name",
+        $Name,
+        "-Project",
+        $Project
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($BindUrl)) {
+        $arguments += @("-Url", $BindUrl)
+    }
+
+    $arguments += @("-LogFile", $logFile)
+
     $process = Start-Process `
         -FilePath "powershell.exe" `
-        -ArgumentList @(
-            "-NoExit",
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            $childRunner,
-            "-Name",
-            $Name,
-            "-Project",
-            $Project,
-            "-Url",
-            $Url,
-            "-LogFile",
-            $logFile
-        ) `
+        -ArgumentList $arguments `
         -WorkingDirectory $exampleRoot `
         -WindowStyle Normal `
         -PassThru
@@ -164,8 +206,10 @@ function Start-McpServer {
 }
 
 try {
+    Assert-PortsAvailable -Servers $servers
+
     foreach ($server in $servers) {
-        $started = Start-McpServer -Name $server.Name -Project $server.Project -Url $server.Url
+        $started = Start-McpServer -Name $server.Name -Project $server.Project -Url $server.Url -BindUrl $server.BindUrl
         $processes.Add($started)
         Write-Host "Started $($started.Name) on $($started.Url) (PID $($started.Process.Id))"
     }

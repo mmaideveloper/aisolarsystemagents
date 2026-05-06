@@ -15,6 +15,13 @@ This version follows your requested model:
 - `src/SmartRoomMcp` (subserver with `get_version` => `smartroom_v1`)
 - `src/SmartIdentityMcp` (subserver with `get_version` => `smartidentity_v1`)
 
+## Business architecture documentation
+
+Stakeholder-facing architecture notes and diagrams are in:
+
+- `docs/global-gateway-mcp-architecture.md`
+- `docs/global-gateway-mcp-architecture.mmd`
+
 ## Run all servers
 
 From this folder:
@@ -29,9 +36,23 @@ In `Development`, the gateway `/mcp` and `/relay/*` endpoints are open for local
 
 Default endpoints:
 
-- Gateway: `http://localhost:5080/mcp`
+- Gateway: `https://localhost:6001/mcp`
 - SmartRoom: `http://localhost:5081/mcp`
 - SmartIdentity: `http://localhost:5082/mcp`
+
+The local gateway certificate is issued by `SolarAgents Local Dev Root CA`.
+For Node/Electron-based clients that do not read the Windows trust store, set:
+
+```powershell
+$env:NODE_EXTRA_CA_CERTS = (Resolve-Path "..\..\..\.certs\solaragents-local-root-ca.pem").Path
+```
+
+VS Code must be started after that environment variable is present. To launch it
+with the MCP certificate explicitly:
+
+```powershell
+.\scripts\start-vscode-with-mcp-cert.ps1
+```
 
 Server output is written to:
 

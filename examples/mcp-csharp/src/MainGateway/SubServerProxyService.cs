@@ -40,31 +40,73 @@ public sealed class SubServerMcpRelayService(IHttpClientFactory httpClientFactor
 {
     public async Task<string> ForwardAsync(string serverName, string jsonRpcBody, string authHeader, CancellationToken ct)
     {
-        var server = config.Get().SubServers.FirstOrDefault(s => s.Name.Equals(serverName, StringComparison.OrdinalIgnoreCase))
-                     ?? throw new InvalidOperationException($"Unknown subserver '{serverName}'");
-
-        using var req = new HttpRequestMessage(HttpMethod.Post, server.Url)
+        var correlationId = CreateCorrelationId();
+        Console.WriteLine($"[{DateTimeOffset.UtcNow:O}] correlationId={correlationId} method=relay/{serverName} status=start");
+        try
         {
-            Content = new StringContent(jsonRpcBody, Encoding.UTF8, "application/json")
-        };
+            var server = config.Get().SubServers.FirstOrDefault(s => s.Name.Equals(serverName, StringComparison.OrdinalIgnoreCase))
+                         ?? throw new InvalidOperationException($"Unknown subserver '{serverName}'");
 
-        if (!string.IsNullOrWhiteSpace(authHeader))
+            jsonRpcBody = AddCorrelationIdToJsonRpcBody(jsonRpcBody, correlationId);
+
+            using var req = new HttpRequestMessage(HttpMethod.Post, server.Url)
+            {
+                Content = new StringContent(jsonRpcBody, Encoding.UTF8, "application/json")
+            };
+
+            if (!string.IsNullOrWhiteSpace(authHeader))
+            {
+                req.Headers.Authorization = AuthenticationHeaderValue.Parse(authHeader);
+            }
+
+            var client = httpClientFactory.CreateClient();
+            using var resp = await client.SendAsync(req, ct);
+            resp.EnsureSuccessStatusCode();
+            var body = await resp.Content.ReadAsStringAsync(ct);
+            Console.WriteLine($"[{DateTimeOffset.UtcNow:O}] correlationId={correlationId} method=relay/{serverName} status=end");
+            return body;
+        }
+        catch (Exception ex)
         {
-            req.Headers.Authorization = AuthenticationHeaderValue.Parse(authHeader);
+            Console.WriteLine($"[{DateTimeOffset.UtcNow:O}] correlationId={correlationId} method=relay/{serverName} status=error error=\"{ex.Message}\"");
+            throw;
+        }
+    }
+
+    private static string AddCorrelationIdToJsonRpcBody(string jsonRpcBody, string correlationId)
+    {
+        var node = JsonNode.Parse(jsonRpcBody)?.AsObject()
+            ?? throw new InvalidOperationException("MCP request body was not valid JSON.");
+
+        if (!string.Equals(node["method"]?.GetValue<string>(), "tools/call", StringComparison.OrdinalIgnoreCase))
+        {
+            return jsonRpcBody;
         }
 
-        var client = httpClientFactory.CreateClient();
-        using var resp = await client.SendAsync(req, ct);
-        resp.EnsureSuccessStatusCode();
-        return await resp.Content.ReadAsStringAsync(ct);
+        if (node["params"] is not JsonObject parameters)
+        {
+            parameters = new JsonObject();
+            node["params"] = parameters;
+        }
+
+        if (parameters["arguments"] is not JsonObject arguments)
+        {
+            arguments = new JsonObject();
+            parameters["arguments"] = arguments;
+        }
+
+        arguments["correlationId"] = correlationId;
+        return JsonSerializer.Serialize(node, GatewayMcpToolService.JsonOptions);
     }
+
+    private static string CreateCorrelationId() => Guid.NewGuid().ToString("N");
 }
 
 public sealed class GatewayMcpToolService(
     IHttpClientFactory httpClientFactory,
     GatewayConfigurationService configuration)
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    internal static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     public async Task<ListToolsResult> ListToolsAsync(CancellationToken ct)
     {
@@ -132,13 +174,27 @@ public sealed class GatewayMcpToolService(
 
     public async Task<CallToolResult> CallToolAsync(CallToolRequestParams request, CancellationToken ct)
     {
-        return request.Name switch
+        var correlationId = CreateCorrelationId();
+        Console.WriteLine($"[{DateTimeOffset.UtcNow:O}] correlationId={correlationId} method={request.Name} status=start");
+
+        try
         {
-            "gateway_get_configuration" => CreateTextResult(configuration.Get()),
-            "gateway_add_configuration" => AddConfiguration(request),
-            "gateway_restart" => RestartGateway(),
-            _ => await CallSubServerToolAsync(request, ct)
-        };
+            var result = request.Name switch
+            {
+                "gateway_get_configuration" => CreateTextResult(configuration.Get()),
+                "gateway_add_configuration" => AddConfiguration(request),
+                "gateway_restart" => RestartGateway(),
+                _ => await CallSubServerToolAsync(request, correlationId, ct)
+            };
+
+            Console.WriteLine($"[{DateTimeOffset.UtcNow:O}] correlationId={correlationId} method={request.Name} status=end");
+            return result;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[{DateTimeOffset.UtcNow:O}] correlationId={correlationId} method={request.Name} status=error error=\"{ex.Message}\"");
+            throw;
+        }
     }
 
     private CallToolResult AddConfiguration(CallToolRequestParams request)
@@ -164,7 +220,7 @@ public sealed class GatewayMcpToolService(
         return CreateTextResult("restart_requested");
     }
 
-    private async Task<CallToolResult> CallSubServerToolAsync(CallToolRequestParams request, CancellationToken ct)
+    private async Task<CallToolResult> CallSubServerToolAsync(CallToolRequestParams request, string correlationId, CancellationToken ct)
     {
         foreach (var server in configuration.Get().SubServers)
         {
@@ -188,15 +244,18 @@ public sealed class GatewayMcpToolService(
                     continue;
                 }
 
+                var arguments = request.Arguments is null
+                    ? new JsonObject()
+                    : JsonSerializer.SerializeToNode(request.Arguments, JsonOptions)?.AsObject() ?? new JsonObject();
+                arguments["correlationId"] = correlationId;
+
                 var result = await SendMcpRequestAsync(
                     server.Url,
                     "tools/call",
                     new JsonObject
                     {
                         ["name"] = originalToolName,
-                        ["arguments"] = request.Arguments is null
-                            ? new JsonObject()
-                            : JsonSerializer.SerializeToNode(request.Arguments, JsonOptions)
+                        ["arguments"] = arguments
                     },
                     ct);
 
@@ -363,4 +422,6 @@ public sealed class GatewayMcpToolService(
         => string.IsNullOrWhiteSpace(description)
             ? $"Tool from {serverName} MCP server"
             : $"{serverName}: {description}";
+
+    private static string CreateCorrelationId() => Guid.NewGuid().ToString("N");
 }

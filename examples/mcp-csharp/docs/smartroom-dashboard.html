@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SmartRoom — Dashboard & Reports</title>
+  <link href="https://fonts.googleapis.com/css?family=Source+Sans+Pro:400,300,600,700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: 'Source Sans Pro', sans-serif;
+      font-size: 13px;
+      color: #333;
+      background: #f5f5f5;
+    }
+
+    /* Navbar */
+    .navbar-default {
+      background: #fff;
+      border-color: #ddd;
+      border-radius: 0;
+      margin-bottom: 0;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    .navbar-brand { padding: 10px 15px; }
+    .navbar-brand img { height: 34px; }
+    .navbar-default .navbar-nav > li > a {
+      color: #555;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 15px 16px;
+    }
+    .navbar-default .navbar-nav > li > a:hover { color: #004080; background: transparent; }
+    .navbar-default .navbar-nav > li.active > a,
+    .navbar-default .navbar-nav > li.active > a:focus {
+      color: #004080;
+      background: transparent;
+      border-bottom: 3px solid #00A0E3;
+    }
+    .navbar-default .navbar-nav > li > a .badge {
+      background: #00A0E3;
+      font-size: 10px;
+      margin-left: 4px;
+    }
+
+    /* Page header bar */
+    .page-header-bar {
+      background: #004080;
+      padding: 14px 0;
+      margin-bottom: 24px;
+    }
+    .page-header-bar h2 {
+      color: #fff;
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+    }
+    .page-header-bar p {
+      color: rgba(255,255,255,0.7);
+      margin: 2px 0 0;
+      font-size: 12px;
+    }
+
+    /* Stat cards */
+    .stat-card {
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 0;
+      padding: 16px 18px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .stat-card .stat-icon {
+      width: 44px;
+      height: 44px;
+      background: #e8f0fb;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 4px;
+      flex-shrink: 0;
+    }
+    .stat-card .stat-icon svg { width: 22px; height: 22px; fill: #004080; }
+    .stat-card .stat-icon.accent { background: #e0f4fd; }
+    .stat-card .stat-icon.accent svg { fill: #00A0E3; }
+    .stat-card .stat-icon.green { background: #e6f4ea; }
+    .stat-card .stat-icon.green svg { fill: #2e7d32; }
+    .stat-card .stat-icon.orange { background: #fff3e0; }
+    .stat-card .stat-icon.orange svg { fill: #e65100; }
+    .stat-card .stat-label { font-size: 11px; color: #777; margin: 0 0 2px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+    .stat-card .stat-value { font-size: 26px; font-weight: 700; color: #004080; margin: 0; line-height: 1; }
+    .stat-card .stat-sub { font-size: 11px; color: #999; margin: 3px 0 0; }
+
+    /* Panels */
+    .panel {
+      border-radius: 0;
+      border-color: #ddd;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+      margin-bottom: 20px;
+    }
+    .panel-heading {
+      background: #fff;
+      border-bottom: 1px solid #ddd;
+      padding: 11px 15px;
+      border-radius: 0 !important;
+    }
+    .panel-heading h4 {
+      margin: 0;
+      font-size: 13px;
+      font-weight: 700;
+      color: #004080;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .panel-heading .panel-actions { float: right; margin-top: -2px; }
+    .panel-body { padding: 15px; }
+
+    /* Buttons */
+    .btn { border-radius: 0; font-family: 'Source Sans Pro', sans-serif; font-size: 12px; font-weight: 600; }
+    .btn-primary { background-color: #004080; border-color: #003366; color: #fff; }
+    .btn-primary:hover, .btn-primary:focus { background-color: #003366; border-color: #002a52; color: #fff; }
+    .btn-accent { background-color: #00A0E3; border-color: #0090cc; color: #fff; }
+    .btn-accent:hover { background-color: #0090cc; color: #fff; }
+    .btn-default { background: #fff; border-color: #ddd; color: #555; }
+    .btn-default:hover { background: #f5f5f5; color: #333; }
+
+    /* Room bar rows */
+    .room-row { padding: 9px 0; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; gap: 10px; }
+    .room-row:last-child { border-bottom: none; }
+    .room-name { font-size: 12px; color: #333; font-weight: 600; flex: 0 0 210px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .room-bar-wrap { flex: 1; background: #f5f5f5; height: 8px; border-radius: 0; overflow: hidden; }
+    .room-bar-fill { height: 100%; border-radius: 0; }
+    .room-count { flex: 0 0 36px; text-align: right; font-size: 12px; font-weight: 700; color: #004080; }
+    .room-badge { flex: 0 0 60px; text-align: right; }
+
+    /* SmartIdentity table */
+    .si-table td, .si-table th { font-size: 12px; padding: 7px 10px !important; vertical-align: middle !important; }
+    .si-table th { background: #f9f9f9; color: #555; font-weight: 700; text-transform: uppercase; font-size: 11px; letter-spacing: 0.03em; }
+    .si-table .trend-up { color: #2e7d32; font-weight: 600; }
+    .si-table .trend-down { color: #c62828; font-weight: 600; }
+
+    /* Section label */
+    .section-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #777;
+      margin: 0 0 14px;
+      padding-bottom: 6px;
+      border-bottom: 2px solid #00A0E3;
+      display: inline-block;
+    }
+
+    /* Tabs */
+    .nav-tabs { border-bottom: 2px solid #ddd; margin-bottom: 20px; }
+    .nav-tabs > li > a { border-radius: 0; color: #777; font-size: 12px; font-weight: 600; padding: 8px 16px; }
+    .nav-tabs > li.active > a,
+    .nav-tabs > li.active > a:hover { color: #004080; border-color: #ddd #ddd #fff; border-bottom: 2px solid #00A0E3; }
+    .nav-tabs > li > a:hover { color: #004080; background: #f9f9f9; }
+
+    /* Badge */
+    .badge-accent { background: #00A0E3; color: #fff; font-size: 10px; padding: 2px 7px; border-radius: 10px; }
+    .badge-navy { background: #004080; color: #fff; font-size: 10px; padding: 2px 7px; border-radius: 10px; }
+
+    /* Date range bar */
+    .date-bar { background: #fff; border: 1px solid #ddd; padding: 10px 15px; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; font-size: 12px; color: #555; }
+    .date-bar label { margin: 0; font-weight: 600; color: #777; }
+    .date-bar input { border: 1px solid #ddd; padding: 4px 8px; font-size: 12px; font-family: 'Source Sans Pro', sans-serif; color: #333; outline: none; }
+    .date-bar input:focus { border-color: #00A0E3; }
+
+    a { color: #00A0E3; }
+    a:hover { color: #003366; }
+    h1, h2, h3, h4 { color: #004080; }
+
+    .text-accent { color: #00A0E3; }
+    .text-navy { color: #004080; }
+
+    footer { background: #004080; color: rgba(255,255,255,0.6); font-size: 11px; padding: 14px 0; margin-top: 40px; text-align: center; }
+    footer span { color: #fff; font-weight: 600; }
+  </style>
+</head>
+<body>
+
+<!-- Navbar -->
+<nav class="navbar navbar-default">
+  <div class="container-fluid">
+    <div class="navbar-header">
+      <a class="navbar-brand" href="#">
+        <img src="https://dev.smartroom.com/app/main/images/smartexchange_logo-fa9e95fa820e6007d244477271295174.png" alt="SmartRoom" />
+      </a>
+    </div>
+    <ul class="nav navbar-nav navbar-right">
+      <li class="active"><a href="#dashboard" onclick="showTab('dashboard',this)">Dashboard</a></li>
+      <li><a href="#reports" onclick="showTab('reports',this)">Reports</a></li>
+      <li><a href="#">Admin</a></li>
+      <li><a href="#"><span class="glyphicon glyphicon-user"></span> John Smith</a></li>
+    </ul>
+  </div>
+</nav>
+
+<!-- Dashboard Tab -->
+<div id="tab-dashboard">
+
+  <div class="page-header-bar">
+    <div class="container-fluid">
+      <div class="row">
+        <div class="col-sm-8">
+          <h2>Dashboard</h2>
+          <p>Overview &mdash; May 6, 2026</p>
+        </div>
+        <div class="col-sm-4 text-right" style="padding-top:6px;">
+          <button class="btn btn-default btn-sm"><span class="glyphicon glyphicon-refresh"></span> Refresh</button>
+          &nbsp;
+          <button class="btn btn-accent btn-sm"><span class="glyphicon glyphicon-download-alt"></span> Export</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="container-fluid">
+
+    <!-- Stat cards -->
+    <div class="row">
+      <div class="col-sm-6 col-md-3">
+        <div class="stat-card">
+          <div class="stat-icon">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5z"/></svg>
+          </div>
+          <div>
+            <p class="stat-label">SmartRooms</p>
+            <p class="stat-value">5</p>
+            <p class="stat-sub">Active rooms</p>
+          </div>
+        </div>
+      </div>
+      <div class="col-sm-6 col-md-3">
+        <div class="stat-card">
+          <div class="stat-icon accent">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          </div>
+          <div>
+            <p class="stat-label">Room Users</p>
+            <p class="stat-value">600</p>
+            <p class="stat-sub">Across all rooms</p>
+          </div>
+        </div>
+      </div>
+      <div class="col-sm-6 col-md-3">
+        <div class="stat-card">
+          <div class="stat-icon green">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+          </div>
+          <div>
+            <p class="stat-label">SmartIdentity Users</p>
+            <p class="stat-value">3,684</p>
+            <p class="stat-sub">As of May 1, 2026</p>
+          </div>
+        </div>
+      </div>
+      <div class="col-sm-6 col-md-3">
+        <div class="stat-card">
+          <div class="stat-icon orange">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          </div>
+          <div>
+            <p class="stat-label">Avg Room Size</p>
+            <p class="stat-value">120</p>
+            <p class="stat-sub">Users per room</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+
+      <!-- Users per SmartRoom -->
+      <div class="col-md-7">
+        <div class="panel panel-default">
+          <div class="panel-heading">
+            <h4>Users per SmartRoom
+              <span class="panel-actions">
+                <button class="btn btn-default btn-xs">All time</button>
+              </span>
+            </h4>
+          </div>
+          <div class="panel-body">
+            <div class="room-row">
+              <span class="room-name">Northwind Trading</span>
+              <div class="room-bar-wrap"><div class="room-bar-fill" style="width:100%;background:#004080;"></div></div>
+              <span class="room-count">194</span>
+              <span class="room-badge"><span class="badge-accent">Largest</span></span>
+            </div>
+            <div class="room-row">
+              <span class="room-name">Fabrikam Finance</span>
+              <div class="room-bar-wrap"><div class="room-bar-fill" style="width:81%;background:#004080;"></div></div>
+              <span class="room-count">157</span>
+              <span class="room-badge"></span>
+            </div>
+            <div class="room-row">
+              <span class="room-name">Contoso Operations</span>
+              <div class="room-bar-wrap"><div class="room-bar-fill" style="width:62%;background:#00A0E3;"></div></div>
+              <span class="room-count">120</span>
+              <span class="room-badge"></span>
+            </div>
+            <div class="room-row">
+              <span class="room-name">Boeing Engineering</span>
+              <div class="room-bar-wrap"><div class="room-bar-fill" style="width:43%;background:#00A0E3;"></div></div>
+              <span class="room-count">83</span>
+              <span class="room-badge"></span>
+            </div>
+            <div class="room-row">
+              <span class="room-name">Bank of America Executive</span>
+              <div class="room-bar-wrap"><div class="room-bar-fill" style="width:24%;background:#ccc;"></div></div>
+              <span class="room-count">46</span>
+              <span class="room-badge"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SmartIdentity trend chart -->
+      <div class="col-md-5">
+        <div class="panel panel-default">
+          <div class="panel-heading">
+            <h4>SmartIdentity users &mdash; April trend</h4>
+          </div>
+          <div class="panel-body">
+            <div style="position:relative;height:198px;">
+              <canvas id="siChart" role="img" aria-label="SmartIdentity user trend April 2026"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Room detail table -->
+    <div class="row">
+      <div class="col-md-12">
+        <div class="panel panel-default">
+          <div class="panel-heading">
+            <h4>SmartRoom detail
+              <span class="panel-actions">
+                <button class="btn btn-primary btn-xs"><span class="glyphicon glyphicon-plus"></span> New Room</button>
+              </span>
+            </h4>
+          </div>
+          <div class="panel-body" style="padding:0;">
+            <table class="table table-hover si-table" style="margin:0;">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Room Name</th>
+                  <th>Users</th>
+                  <th>Created</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>1</td>
+                  <td><strong>Northwind Trading SmartRoom</strong></td>
+                  <td><span class="badge-navy">194</span></td>
+                  <td>Apr 5, 2026</td>
+                  <td><span class="label label-success">Active</span></td>
+                  <td><a href="#">View</a> &nbsp; <a href="#">Edit</a></td>
+                </tr>
+                <tr>
+                  <td>2</td>
+                  <td><strong>Fabrikam Finance SmartRoom</strong></td>
+                  <td><span class="badge-navy">157</span></td>
+                  <td>Apr 4, 2026</td>
+                  <td><span class="label label-success">Active</span></td>
+                  <td><a href="#">View</a> &nbsp; <a href="#">Edit</a></td>
+                </tr>
+                <tr>
+                  <td>3</td>
+                  <td><strong>Contoso Operations SmartRoom</strong></td>
+                  <td><span class="badge-navy">120</span></td>
+                  <td>Apr 3, 2026</td>
+                  <td><span class="label label-success">Active</span></td>
+                  <td><a href="#">View</a> &nbsp; <a href="#">Edit</a></td>
+                </tr>
+                <tr>
+                  <td>4</td>
+                  <td><strong>Boeing Engineering SmartRoom</strong></td>
+                  <td><span class="badge-navy">83</span></td>
+                  <td>Apr 2, 2026</td>
+                  <td><span class="label label-success">Active</span></td>
+                  <td><a href="#">View</a> &nbsp; <a href="#">Edit</a></td>
+                </tr>
+                <tr>
+                  <td>5</td>
+                  <td><strong>Bank of America Executive SmartRoom</strong></td>
+                  <td><span class="badge-navy">46</span></td>
+                  <td>Apr 1, 2026</td>
+                  <td><span class="label label-warning">Review</span></td>
+                  <td><a href="#">View</a> &nbsp; <a href="#">Edit</a></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div><!-- end tab-dashboard -->
+
+<!-- Reports Tab -->
+<div id="tab-reports" style="display:none;">
+
+  <div class="page-header-bar">
+    <div class="container-fluid">
+      <div class="row">
+        <div class="col-sm-8">
+          <h2>Reports</h2>
+          <p>SmartRoom &amp; SmartIdentity analytics</p>
+        </div>
+        <div class="col-sm-4 text-right" style="padding-top:6px;">
+          <button class="btn btn-accent btn-sm"><span class="glyphicon glyphicon-download-alt"></span> Export CSV</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="container-fluid">
+
+    <!-- Date range -->
+    <div class="date-bar">
+      <label>Date range:</label>
+      <input type="date" value="2026-04-01" />
+      <span>&mdash;</span>
+      <input type="date" value="2026-05-06" />
+      <button class="btn btn-primary btn-sm">Apply</button>
+    </div>
+
+    <!-- Report tabs -->
+    <ul class="nav nav-tabs">
+      <li class="active"><a href="#" onclick="showReportTab('smartroom',this);return false;">SmartRoom users</a></li>
+      <li><a href="#" onclick="showReportTab('smartidentity',this);return false;">SmartIdentity users</a></li>
+    </ul>
+
+    <!-- SmartRoom report -->
+    <div id="report-smartroom">
+      <div class="row">
+        <div class="col-md-8">
+          <div class="panel panel-default">
+            <div class="panel-heading"><h4>Users per SmartRoom — Bar chart</h4></div>
+            <div class="panel-body">
+              <div style="position:relative;height:260px;">
+                <canvas id="roomBarChart" role="img" aria-label="Bar chart users per smartroom"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="panel panel-default">
+            <div class="panel-heading"><h4>Distribution</h4></div>
+            <div class="panel-body">
+              <div style="position:relative;height:260px;">
+                <canvas id="roomPieChart" role="img" aria-label="Pie chart distribution of users per room"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel panel-default">
+        <div class="panel-heading"><h4>Room user report</h4></div>
+        <div class="panel-body" style="padding:0;">
+          <table class="table table-striped table-hover si-table" style="margin:0;">
+            <thead>
+              <tr>
+                <th>Room name</th>
+                <th>Users</th>
+                <th>% of total</th>
+                <th>Date recorded</th>
+                <th>Share</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td>Northwind Trading SmartRoom</td><td>194</td><td>32.3%</td><td>Apr 5, 2026</td><td><div style="height:6px;background:#004080;width:100%;border-radius:0;"></div></td></tr>
+              <tr><td>Fabrikam Finance SmartRoom</td><td>157</td><td>26.2%</td><td>Apr 4, 2026</td><td><div style="height:6px;background:#004080;width:81%;border-radius:0;"></div></td></tr>
+              <tr><td>Contoso Operations SmartRoom</td><td>120</td><td>20.0%</td><td>Apr 3, 2026</td><td><div style="height:6px;background:#00A0E3;width:62%;border-radius:0;"></div></td></tr>
+              <tr><td>Boeing Engineering SmartRoom</td><td>83</td><td>13.8%</td><td>Apr 2, 2026</td><td><div style="height:6px;background:#00A0E3;width:43%;border-radius:0;"></div></td></tr>
+              <tr><td>Bank of America Executive SmartRoom</td><td>46</td><td>7.7%</td><td>Apr 1, 2026</td><td><div style="height:6px;background:#bbb;width:24%;border-radius:0;"></div></td></tr>
+              <tr style="font-weight:700;background:#f9f9f9;">
+                <td>Total</td><td>600</td><td>100%</td><td>—</td><td></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- SmartIdentity report -->
+    <div id="report-smartidentity" style="display:none;">
+      <div class="row">
+        <div class="col-md-12">
+          <div class="panel panel-default">
+            <div class="panel-heading"><h4>SmartIdentity users — Daily trend (Apr 1 – May 1, 2026)</h4></div>
+            <div class="panel-body">
+              <div style="position:relative;height:260px;">
+                <canvas id="siReportChart" role="img" aria-label="SmartIdentity users daily line chart April 2026"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel panel-default">
+        <div class="panel-heading"><h4>SmartIdentity user data — Weekly summary</h4></div>
+        <div class="panel-body" style="padding:0;">
+          <table class="table table-striped table-hover si-table" style="margin:0;">
+            <thead>
+              <tr>
+                <th>Week</th>
+                <th>Start users</th>
+                <th>End users</th>
+                <th>Change</th>
+                <th>Trend</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td>Apr 1–7</td><td>4,574</td><td>5,396</td><td class="trend-up">+822 ▲</td><td><div style="height:6px;background:#2e7d32;width:90%;"></div></td></tr>
+              <tr><td>Apr 8–14</td><td>5,533</td><td>1,355</td><td class="trend-down">−4,178 ▼</td><td><div style="height:6px;background:#c62828;width:100%;"></div></td></tr>
+              <tr><td>Apr 15–21</td><td>1,492</td><td>2,314</td><td class="trend-up">+822 ▲</td><td><div style="height:6px;background:#2e7d32;width:50%;"></div></td></tr>
+              <tr><td>Apr 22–28</td><td>2,451</td><td>3,273</td><td class="trend-up">+822 ▲</td><td><div style="height:6px;background:#2e7d32;width:55%;"></div></td></tr>
+              <tr><td>Apr 29–May 1</td><td>3,410</td><td>3,684</td><td class="trend-up">+274 ▲</td><td><div style="height:6px;background:#00A0E3;width:35%;"></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div><!-- end tab-reports -->
+
+<footer>
+  &copy; 2026 <span>SmartRoom</span> &mdash; All rights reserved.
+</footer>
+
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.4/jquery.min.js"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/js/bootstrap.min.js"></script>
+<script>
+  /* Tab navigation */
+  function showTab(name, el) {
+    document.getElementById('tab-dashboard').style.display = name === 'dashboard' ? '' : 'none';
+    document.getElementById('tab-reports').style.display = name === 'reports' ? '' : 'none';
+    document.querySelectorAll('.navbar-nav li').forEach(li => li.classList.remove('active'));
+    if (el) el.parentElement.classList.add('active');
+    if (name === 'reports') initReportCharts();
+  }
+
+  function showReportTab(name, el) {
+    document.getElementById('report-smartroom').style.display = name === 'smartroom' ? '' : 'none';
+    document.getElementById('report-smartidentity').style.display = name === 'smartidentity' ? '' : 'none';
+    document.querySelectorAll('.nav-tabs li').forEach(li => li.classList.remove('active'));
+    if (el) el.parentElement.classList.add('active');
+  }
+
+  /* SmartIdentity data */
+  const siData = [
+    {d:'Apr 1',v:4574},{d:'Apr 2',v:4711},{d:'Apr 3',v:4848},{d:'Apr 4',v:4985},{d:'Apr 5',v:5122},
+    {d:'Apr 6',v:5259},{d:'Apr 7',v:5396},{d:'Apr 8',v:5533},{d:'Apr 9',v:5670},{d:'Apr 10',v:5807},
+    {d:'Apr 11',v:5944},{d:'Apr 12',v:1081},{d:'Apr 13',v:1218},{d:'Apr 14',v:1355},{d:'Apr 15',v:1492},
+    {d:'Apr 16',v:1629},{d:'Apr 17',v:1766},{d:'Apr 18',v:1903},{d:'Apr 19',v:2040},{d:'Apr 20',v:2177},
+    {d:'Apr 21',v:2314},{d:'Apr 22',v:2451},{d:'Apr 23',v:2588},{d:'Apr 24',v:2725},{d:'Apr 25',v:2862},
+    {d:'Apr 26',v:2999},{d:'Apr 27',v:3136},{d:'Apr 28',v:3273},{d:'Apr 29',v:3410},{d:'Apr 30',v:3547},
+    {d:'May 1',v:3684}
+  ];
+
+  /* Dashboard SmartIdentity mini chart */
+  new Chart(document.getElementById('siChart'), {
+    type: 'line',
+    data: {
+      labels: siData.map(x => x.d),
+      datasets: [{
+        label: 'Users',
+        data: siData.map(x => x.v),
+        borderColor: '#00A0E3',
+        backgroundColor: 'rgba(0,160,227,0.1)',
+        borderWidth: 2,
+        pointRadius: 2,
+        tension: 0.35,
+        fill: true
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { autoSkip: true, maxTicksLimit: 6, font: { size: 10 } }, grid: { display: false } },
+        y: { ticks: { font: { size: 10 }, callback: v => v.toLocaleString() }, grid: { color: 'rgba(0,0,0,0.05)' } }
+      }
+    }
+  });
+
+  let reportChartsInit = false;
+  function initReportCharts() {
+    if (reportChartsInit) return;
+    reportChartsInit = true;
+
+    /* Room bar chart */
+    new Chart(document.getElementById('roomBarChart'), {
+      type: 'bar',
+      data: {
+        labels: ['Northwind Trading','Fabrikam Finance','Contoso Ops','Boeing Eng','BofA Executive'],
+        datasets: [{
+          label: 'Users',
+          data: [194, 157, 120, 83, 46],
+          backgroundColor: ['#004080','#004080','#00A0E3','#00A0E3','#aaa'],
+          borderWidth: 0
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { font: { size: 11 } }, grid: { display: false } },
+          y: { ticks: { font: { size: 11 } }, grid: { color: 'rgba(0,0,0,0.05)' } }
+        }
+      }
+    });
+
+    /* Room pie chart */
+    new Chart(document.getElementById('roomPieChart'), {
+      type: 'doughnut',
+      data: {
+        labels: ['Northwind','Fabrikam','Contoso','Boeing','BofA'],
+        datasets: [{
+          data: [194, 157, 120, 83, 46],
+          backgroundColor: ['#004080','#00A0E3','#0066aa','#0090cc','#aabbcc'],
+          borderWidth: 2,
+          borderColor: '#fff'
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'bottom', labels: { font: { size: 11 }, boxWidth: 12 } }
+        }
+      }
+    });
+
+    /* SmartIdentity report chart */
+    new Chart(document.getElementById('siReportChart'), {
+      type: 'line',
+      data: {
+        labels: siData.map(x => x.d),
+        datasets: [{
+          label: 'SmartIdentity users',
+          data: siData.map(x => x.v),
+          borderColor: '#004080',
+          backgroundColor: 'rgba(0,64,128,0.07)',
+          borderWidth: 2,
+          pointRadius: 3,
+          pointBackgroundColor: '#004080',
+          tension: 0.3,
+          fill: true
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { autoSkip: true, maxTicksLimit: 10, font: { size: 11 } }, grid: { display: false } },
+          y: { ticks: { font: { size: 11 }, callback: v => v.toLocaleString() }, grid: { color: 'rgba(0,0,0,0.05)' } }
+        }
+      }
+    });
+  }
+</script>
+</body>
+</html>

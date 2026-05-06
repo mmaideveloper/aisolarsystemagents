@@ -1,8 +1,0 @@
-{
-  "servers": {
-    "main-gateway": {
-      "type": "http",
-      "url": "http://localhost:5080/mcp"
-    }
-  }
-}

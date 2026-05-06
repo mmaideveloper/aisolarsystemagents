@@ -5,7 +5,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$Project,
 
-    [Parameter(Mandatory = $true)]
+    [Parameter(Mandatory = $false)]
     [string]$Url,
 
     [Parameter(Mandatory = $true)]
@@ -19,11 +19,21 @@ New-Item -ItemType Directory -Force -Path $logDirectory | Out-Null
 
 $host.UI.RawUI.WindowTitle = "$Name - MCP Server"
 
-$env:ASPNETCORE_URLS = $Url
+if (-not [string]::IsNullOrWhiteSpace($Url)) {
+    $env:ASPNETCORE_URLS = $Url
+}
+else {
+    Remove-Item Env:\ASPNETCORE_URLS -ErrorAction SilentlyContinue
+}
 $env:ASPNETCORE_ENVIRONMENT = "Development"
 $env:DOTNET_ENVIRONMENT = "Development"
 
-"Starting $Name on $Url" | Tee-Object -FilePath $LogFile
+if (-not [string]::IsNullOrWhiteSpace($Url)) {
+    "Starting $Name on $Url" | Tee-Object -FilePath $LogFile
+}
+else {
+    "Starting $Name with application-configured endpoints" | Tee-Object -FilePath $LogFile
+}
 "" | Tee-Object -FilePath $LogFile -Append
 & dotnet run --project $Project *>&1 | Tee-Object -FilePath $LogFile
 exit $LASTEXITCODE
